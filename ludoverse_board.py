@@ -515,17 +515,19 @@ def draw_control_panel(surface, game_state, ui_state):
     _draw_text(surface, "Agent 2 (BLUE)", small_font, BLUE_DARK, (817, 405))
     _draw_text(surface, agent_two, body_font, GRID, (817, 422))
 
-    nodes = _ui_value(ui_state, "nodes_explored", default=0)
+    nodes = _ui_value(ui_state, "nodes_explored", "nodes", default=0)
     pruned = _ui_value(
         ui_state,
         "branches_pruned",
         "pruned_branches",
+        "pruned",
         default=0,
     )
     heuristic = _ui_value(
         ui_state,
         "heuristic_score",
         "last_score",
+        "score",
         default=0.0,
     )
     heuristic_text = (
