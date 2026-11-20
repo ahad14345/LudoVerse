@@ -120,16 +120,23 @@ def _apply_selected_move(state, player, piece_id, dice_value, ui_state):
     return next_state
 
 
-def _advance_game(state, agents, ui_state, now, next_step_at):
-    if is_terminal(state) or now < next_step_at:
-        return state, next_step_at
+def _advance_game(state, agents, ui_state, now, last_step_time):
+    if is_terminal(state):
+        return state, last_step_time
+    if (
+        ui_state["mode"] == "AI vs AI"
+        and ui_state.get("paused", False)
+    ):
+        return state, last_step_time
+    if now - last_step_time < STEP_DELAY_MS:
+        return state, last_step_time
 
     player = state.current_turn
     if state.dice_value is None:
         if agents[player] is not None:
             _roll_dice(state, ui_state)
-            return state, now + STEP_DELAY_MS
-        return state, next_step_at
+            return state, now
+        return state, last_step_time
 
     dice_value = state.dice_value
     legal_moves = get_legal_moves(state, player, dice_value)
@@ -142,12 +149,12 @@ def _advance_game(state, agents, ui_state, now, next_step_at):
         )
         return (
             apply_move(state, player, None, dice_value),
-            now + STEP_DELAY_MS,
+            now,
         )
 
     agent = agents[player]
     if agent is None:
-        return state, next_step_at
+        return state, last_step_time
 
     chosen_piece = agent.choose_move(state, player, dice_value)
     ui_state["nodes"] = agent.nodes_explored
@@ -155,7 +162,7 @@ def _advance_game(state, agents, ui_state, now, next_step_at):
     ui_state["score"] = agent.last_score
     return (
         _apply_selected_move(state, player, chosen_piece, dice_value, ui_state),
-        now + STEP_DELAY_MS,
+        now,
     )
 
 
@@ -200,10 +207,11 @@ def main():
         "score": 0.0,
         "status": "Ready",
         "auto_play": True,
+        "paused": False,
     }
     _sync_agent_labels(ui_state)
 
-    next_step_at = pygame.time.get_ticks()
+    last_step_time = pygame.time.get_ticks()
     button_rects = {}
     running = True
     while running:
@@ -215,12 +223,29 @@ def main():
                 if event.key == pygame.K_ESCAPE:
                     running = False
                 elif (
+                    event.key == pygame.K_p
+                    and ui_state["mode"] == "AI vs AI"
+                    and not is_terminal(state)
+                ):
+                    ui_state["paused"] = not ui_state.get("paused", False)
+                    ui_state["status"] = (
+                        "Game Paused - Press P or Resume to continue"
+                        if ui_state["paused"]
+                        else "Game Resumed"
+                    )
+                    if not ui_state["paused"]:
+                        last_step_time = pygame.time.get_ticks()
+                elif (
                     event.key == pygame.K_SPACE
                     and state.dice_value is None
                     and not is_terminal(state)
+                    and not (
+                        mode == "AI vs AI"
+                        and ui_state.get("paused", False)
+                    )
                 ):
                     _roll_dice(state, ui_state)
-                    next_step_at = now + STEP_DELAY_MS
+                    last_step_time = pygame.time.get_ticks()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 position = event.pos
                 if button_rects.get("mode") and button_rects["mode"].collidepoint(position):
@@ -228,10 +253,11 @@ def main():
                     agents = create_agents(mode, difficulty)
                     state = GameState(num_players=2)
                     ui_state["mode"] = mode
+                    ui_state["paused"] = False
                     ui_state["status"] = "Mode changed to {}.".format(mode)
                     _clear_telemetry(ui_state)
                     _sync_agent_labels(ui_state)
-                    next_step_at = now + STEP_DELAY_MS
+                    last_step_time = pygame.time.get_ticks()
                 elif (
                     button_rects.get("difficulty")
                     and button_rects["difficulty"].collidepoint(position)
@@ -251,17 +277,36 @@ def main():
                     and button_rects["reset"].collidepoint(position)
                 ):
                     state = GameState(num_players=2)
+                    ui_state["paused"] = False
                     ui_state["status"] = "Game reset."
                     _clear_telemetry(ui_state)
-                    next_step_at = now + STEP_DELAY_MS
+                    last_step_time = pygame.time.get_ticks()
                 elif (
                     button_rects.get("roll")
                     and button_rects["roll"].collidepoint(position)
                     and state.dice_value is None
                     and not is_terminal(state)
+                    and not (
+                        mode == "AI vs AI"
+                        and ui_state.get("paused", False)
+                    )
                 ):
                     _roll_dice(state, ui_state)
-                    next_step_at = now + STEP_DELAY_MS
+                    last_step_time = pygame.time.get_ticks()
+                elif (
+                    button_rects.get("pause")
+                    and button_rects["pause"].collidepoint(position)
+                    and ui_state["mode"] == "AI vs AI"
+                    and not is_terminal(state)
+                ):
+                    ui_state["paused"] = not ui_state.get("paused", False)
+                    ui_state["status"] = (
+                        "Game Paused - Press P or Resume to continue"
+                        if ui_state["paused"]
+                        else "Game Resumed"
+                    )
+                    if not ui_state["paused"]:
+                        last_step_time = pygame.time.get_ticks()
                 elif (
                     mode == "Human vs AI"
                     and state.current_turn == "RED"
@@ -286,15 +331,15 @@ def main():
                             state.dice_value,
                             ui_state,
                         )
-                        next_step_at = now + STEP_DELAY_MS
+                        last_step_time = pygame.time.get_ticks()
 
         now = pygame.time.get_ticks()
-        state, next_step_at = _advance_game(
+        state, last_step_time = _advance_game(
             state,
             agents,
             ui_state,
             now,
-            next_step_at,
+            last_step_time,
         )
 
         screen.fill(BG)

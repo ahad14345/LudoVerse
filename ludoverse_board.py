@@ -579,6 +579,22 @@ def draw_control_panel(surface, game_state, ui_state):
         PAPER,
         (turn_badge.x + 10, turn_badge.y + 8),
     )
+    paused = ui_state.get("paused", False)
+    if paused:
+        paused_badge = pygame.Rect(
+            turn_badge.right - 74,
+            turn_badge.y + 6,
+            66,
+            18,
+        )
+        pygame.draw.rect(surface, PAPER, paused_badge, border_radius=9)
+        _draw_text(
+            surface,
+            "PAUSED",
+            pygame.font.SysFont("Segoe UI", 9, bold=True),
+            PANEL_DARK,
+            (paused_badge.x + 8, paused_badge.y + 4),
+        )
 
     dice_card = pygame.Rect(805, 232, 270, 132)
     pygame.draw.rect(
@@ -724,9 +740,41 @@ def draw_control_panel(surface, game_state, ui_state):
         13,
     )
 
+    if paused:
+        pause_button = (
+            "pause",
+            "Resume AI (P)",
+            (34, 150, 83),
+            PAPER,
+            (45, 170, 100),
+            PAPER,
+            True,
+        )
+    elif mode == "AI vs AI":
+        pause_button = (
+            "pause",
+            "Pause AI (P)",
+            (217, 119, 6),
+            PAPER,
+            (234, 138, 19),
+            PAPER,
+            True,
+        )
+    else:
+        pause_button = (
+            "pause",
+            "Pause AI (P)",
+            (203, 213, 225),
+            MUTED_TEXT,
+            (203, 213, 225),
+            MUTED_TEXT,
+            False,
+        )
+
     button_specs = (
-        ("roll", "Roll Dice (SPACE)", PANEL_DARK, PAPER, GOLD, PANEL_DARK),
-        ("mode", "Switch Mode", BG, PANEL_TEXT, (226, 232, 240), PANEL_DARK),
+        ("roll", "Roll Dice (SPACE)", PANEL_DARK, PAPER, GOLD, PANEL_DARK, True),
+        pause_button,
+        ("mode", "Switch Mode", BG, PANEL_TEXT, (226, 232, 240), PANEL_DARK, True),
         (
             "difficulty",
             "Difficulty: {}".format(difficulty_value),
@@ -734,6 +782,7 @@ def draw_control_panel(surface, game_state, ui_state):
             PANEL_TEXT,
             (226, 232, 240),
             PANEL_DARK,
+            True,
         ),
         (
             "reset",
@@ -742,26 +791,34 @@ def draw_control_panel(surface, game_state, ui_state):
             RED_DARK,
             (254, 202, 202),
             RED_DARK,
+            True,
         ),
     )
     buttons = {}
     button_font = pygame.font.SysFont("Segoe UI", 13, bold=True)
     mouse_pos = pygame.mouse.get_pos()
-    for index, (key, label, fill, text_color, hover_fill, hover_text) in enumerate(
-        button_specs
-    ):
-        rect = pygame.Rect(810, 590 + index * 40, 260, 34)
+    for index, (
+        key,
+        label,
+        fill,
+        text_color,
+        hover_fill,
+        hover_text,
+        hover_enabled,
+    ) in enumerate(button_specs):
+        rect = pygame.Rect(810, 584 + index * 34, 260, 30)
         hovered = rect.collidepoint(mouse_pos)
-        current_fill = hover_fill if hovered else fill
-        current_text = hover_text if hovered else text_color
-        pygame.draw.rect(surface, SHADOW, rect.move(0, 3), border_radius=17)
-        pygame.draw.rect(surface, current_fill, rect, border_radius=17)
+        is_hovered = hovered and hover_enabled
+        current_fill = hover_fill if is_hovered else fill
+        current_text = hover_text if is_hovered else text_color
+        pygame.draw.rect(surface, SHADOW, rect.move(0, 3), border_radius=15)
+        pygame.draw.rect(surface, current_fill, rect, border_radius=15)
         pygame.draw.rect(
             surface,
-            LEGAL_HALO if hovered else SOFT_GRID,
+            LEGAL_HALO if is_hovered else SOFT_GRID,
             rect,
-            2 if hovered else 1,
-            border_radius=17,
+            2 if is_hovered else 1,
+            border_radius=15,
         )
         text = button_font.render(label, True, current_text)
         surface.blit(text, text.get_rect(center=rect.center))
