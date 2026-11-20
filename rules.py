@@ -2,16 +2,10 @@ from game_state import GameState, HOME_COLUMNS, MAIN_TRACK, START_INDEX
 
 
 SAFE_CELLS = {
-    (6, 1),
-    (1, 8),
-    (8, 13),
-    (13, 6),
-    (6, 2),
     (2, 6),
-    (8, 12),
+    (6, 12),
     (12, 8),
-    (6, 6),
-    (8, 8),
+    (8, 2),
 }
 
 
