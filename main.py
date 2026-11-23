@@ -168,6 +168,35 @@ def _advance_game(state, agents, ui_state, now, last_step_time):
     )
 
 
+def _apply_mode_selection(selected_mode, state, agents, difficulty, ui_state):
+    agents = create_agents(selected_mode, difficulty)
+    state = GameState(num_players=2)
+    ui_state["mode"] = selected_mode
+    ui_state["paused"] = False
+    ui_state["status"] = "Mode changed to {}.".format(selected_mode)
+    _clear_telemetry(ui_state)
+    _sync_agent_labels(ui_state)
+    return state, agents
+
+
+def _apply_difficulty_selection(
+    selected_difficulty,
+    state,
+    agents,
+    mode,
+    ui_state,
+):
+    agents = create_agents(mode, selected_difficulty)
+    state = GameState(num_players=2)
+    ui_state["difficulty"] = selected_difficulty
+    ui_state["paused"] = False
+    ui_state["status"] = "Difficulty set to {}. New game started.".format(
+        selected_difficulty
+    )
+    _clear_telemetry(ui_state)
+    return state, agents
+
+
 def _draw_terminal_banner(surface, winner):
     overlay = pygame.Surface((BOARD_SIZE, BOARD_SIZE), pygame.SRCALPHA)
     overlay.fill((GRID[0], GRID[1], GRID[2], 150))
@@ -230,6 +259,35 @@ def main():
                         ui_state["popup"] = None
                     else:
                         running = False
+                elif ui_state["popup"] is not None:
+                    options = (
+                        MODES
+                        if ui_state["popup"] == "mode"
+                        else DIFFICULTIES
+                    )
+                    for index, option in enumerate(options, start=1):
+                        if event.key == getattr(pygame, "K_" + str(index)):
+                            if ui_state["popup"] == "mode":
+                                mode = option
+                                state, agents = _apply_mode_selection(
+                                    mode,
+                                    state,
+                                    agents,
+                                    difficulty,
+                                    ui_state,
+                                )
+                            else:
+                                difficulty = option
+                                state, agents = _apply_difficulty_selection(
+                                    difficulty,
+                                    state,
+                                    agents,
+                                    mode,
+                                    ui_state,
+                                )
+                            ui_state["popup"] = None
+                            last_step_time = pygame.time.get_ticks()
+                            break
                 elif (
                     event.key == pygame.K_p
                     and ui_state["mode"] == "AI vs AI"
@@ -271,22 +329,26 @@ def main():
                         if selected is not None:
                             if ui_state["popup"] == "mode":
                                 mode = selected
-                                agents = create_agents(mode, difficulty)
-                                state = GameState(num_players=2)
-                                ui_state["mode"] = mode
-                                ui_state["paused"] = False
-                                ui_state["status"] = "Mode changed to {}.".format(mode)
-                                _clear_telemetry(ui_state)
-                                _sync_agent_labels(ui_state)
+                                state, agents = _apply_mode_selection(
+                                    mode,
+                                    state,
+                                    agents,
+                                    difficulty,
+                                    ui_state,
+                                )
                                 last_step_time = pygame.time.get_ticks()
                             else:
                                 difficulty = selected
-                                agents = create_agents(mode, difficulty)
-                                ui_state["difficulty"] = difficulty
-                                ui_state["status"] = "Difficulty set to {}.".format(
-                                    difficulty
+                                state, agents = _apply_difficulty_selection(
+                                    difficulty,
+                                    state,
+                                    agents,
+                                    mode,
+                                    ui_state,
                                 )
-                                _clear_telemetry(ui_state)
+                                last_step_time = pygame.time.get_ticks()
+                            ui_state["popup"] = None
+                        elif not pygame.Rect(350, 250, 420, 300).collidepoint(position):
                             ui_state["popup"] = None
                 elif button_rects.get("mode") and button_rects["mode"].collidepoint(position):
                     ui_state["popup"] = "mode"
@@ -304,6 +366,11 @@ def main():
                     ui_state["status"] = "Game reset."
                     _clear_telemetry(ui_state)
                     last_step_time = pygame.time.get_ticks()
+                elif (
+                    button_rects.get("exit")
+                    and button_rects["exit"].collidepoint(position)
+                ):
+                    running = False
                 elif (
                     button_rects.get("roll")
                     and button_rects["roll"].collidepoint(position)

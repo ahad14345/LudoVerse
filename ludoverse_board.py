@@ -569,15 +569,23 @@ def draw_selection_popup(surface, popup_type, current_value):
         choice_rects[option] = rect
 
     close_rect = pygame.Rect(popup.right - 46, popup.y + 15, 32, 32)
-    pygame.draw.circle(
+    close_hovered = close_rect.collidepoint(pygame.mouse.get_pos())
+    close_fill = RED if close_hovered else (92, 105, 125)
+    pygame.draw.rect(surface, close_fill, close_rect, border_radius=16)
+    pygame.draw.line(
         surface,
-        (255, 255, 255, 30),
-        close_rect.center,
-        16,
+        PAPER,
+        (close_rect.left + 9, close_rect.top + 9),
+        (close_rect.right - 9, close_rect.bottom - 9),
+        3,
     )
-    close_font = pygame.font.SysFont("Segoe UI", 18, bold=True)
-    close_text = close_font.render("X", True, PAPER)
-    surface.blit(close_text, close_text.get_rect(center=close_rect.center))
+    pygame.draw.line(
+        surface,
+        PAPER,
+        (close_rect.right - 9, close_rect.top + 9),
+        (close_rect.left + 9, close_rect.bottom - 9),
+        3,
+    )
     return choice_rects, close_rect
 
 
@@ -641,6 +649,28 @@ def draw_control_panel(surface, game_state, ui_state):
         subtitle_font,
         GOLD,
         (810, 91),
+    )
+    exit_rect = pygame.Rect(PANEL_X + 258, 54, 32, 32)
+    exit_hovered = exit_rect.collidepoint(pygame.mouse.get_pos())
+    pygame.draw.rect(
+        surface,
+        RED if exit_hovered else (92, 105, 125),
+        exit_rect,
+        border_radius=16,
+    )
+    pygame.draw.line(
+        surface,
+        PAPER,
+        (exit_rect.left + 9, exit_rect.top + 9),
+        (exit_rect.right - 9, exit_rect.bottom - 9),
+        3,
+    )
+    pygame.draw.line(
+        surface,
+        PAPER,
+        (exit_rect.right - 9, exit_rect.top + 9),
+        (exit_rect.left + 9, exit_rect.bottom - 9),
+        3,
     )
 
     raw_mode = str(_ui_value(ui_state, "mode", default="AI vs AI"))
@@ -870,10 +900,10 @@ def draw_control_panel(surface, game_state, ui_state):
     button_specs = (
         ("roll", "Roll Dice (SPACE)", PANEL_DARK, PAPER, GOLD, PANEL_DARK, True),
         pause_button,
-        ("mode", "Switch Mode", BG, PANEL_TEXT, (226, 232, 240), PANEL_DARK, True),
+        ("mode", "Choose Mode", BG, PANEL_TEXT, (226, 232, 240), PANEL_DARK, True),
         (
             "difficulty",
-            "Difficulty: {}".format(difficulty_value),
+            "Choose Difficulty: {}".format(difficulty_value),
             BG,
             PANEL_TEXT,
             (226, 232, 240),
@@ -919,6 +949,7 @@ def draw_control_panel(surface, game_state, ui_state):
         text = button_font.render(label, True, current_text)
         surface.blit(text, text.get_rect(center=rect.center))
         buttons[key] = rect
+    buttons["exit"] = exit_rect
 
     pygame.draw.rect(surface, SOFT_GRID, panel, 1, border_radius=14)
     return buttons
