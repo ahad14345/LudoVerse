@@ -67,6 +67,25 @@ def cell_rect(row, col):
     )
 
 
+def draw_game_background(surface):
+    width = surface.get_width()
+    height = surface.get_height()
+    top = (232, 238, 247)
+    bottom = (250, 252, 255)
+    for y in range(height):
+        t = y / max(1, height - 1)
+        color = (
+            int(top[0] + (bottom[0] - top[0]) * t),
+            int(top[1] + (bottom[1] - top[1]) * t),
+            int(top[2] + (bottom[2] - top[2]) * t),
+        )
+        pygame.draw.line(surface, color, (0, y), (width, y))
+
+    glow = pygame.Surface((320, 320), pygame.SRCALPHA)
+    pygame.draw.circle(glow, (255, 255, 255, 100), (160, 160), 150)
+    surface.blit(glow, (80, 100))
+
+
 def _base_rect_for_player(player):
     row, col = BASE_ORIGINS[player]
     return pygame.Rect(
@@ -483,6 +502,83 @@ def _draw_wrapped_text(surface, text, font, color, x, y, max_width, line_height)
     for line in lines:
         surface.blit(font.render(line, True, color), (x, y))
         y += line_height
+
+
+def draw_selection_popup(surface, popup_type, current_value):
+    overlay = pygame.Surface(
+        (surface.get_width(), surface.get_height()),
+        pygame.SRCALPHA,
+    )
+    overlay.fill((20, 28, 45, 170))
+    surface.blit(overlay, (0, 0))
+
+    if popup_type == "mode":
+        title = "Choose Game Mode"
+        options = ("AI vs AI", "Human vs AI")
+        accent = BLUE
+    else:
+        title = "Choose Difficulty"
+        options = ("Easy", "Medium", "Hard")
+        accent = GOLD
+
+    popup = pygame.Rect(350, 250, 420, 300)
+    pygame.draw.rect(surface, (12, 22, 39), popup.move(0, 8), border_radius=24)
+    pygame.draw.rect(surface, PAPER, popup, border_radius=24)
+    pygame.draw.rect(surface, SOFT_GRID, popup, 2, border_radius=24)
+
+    header = pygame.Rect(popup.x, popup.y, popup.width, 72)
+    pygame.draw.rect(surface, PANEL_DARK, header, border_radius=24)
+    pygame.draw.rect(
+        surface,
+        PANEL_DARK,
+        pygame.Rect(popup.x, popup.y + 48, popup.width, 24),
+    )
+    title_font = pygame.font.SysFont("Segoe UI", 22, bold=True)
+    title_text = title_font.render(title, True, PAPER)
+    surface.blit(title_text, title_text.get_rect(center=(popup.centerx, popup.y + 36)))
+
+    choice_rects = {}
+    mouse_pos = pygame.mouse.get_pos()
+    for index, option in enumerate(options):
+        rect = pygame.Rect(popup.x + 34, popup.y + 92 + index * 58, 352, 46)
+        selected = option == current_value
+        hovered = rect.collidepoint(mouse_pos)
+        fill = accent if selected or hovered else BG
+        text_color = PANEL_DARK if not (selected or hovered) else (
+            PANEL_DARK if popup_type == "difficulty" else PAPER
+        )
+        pygame.draw.rect(surface, SHADOW, rect.move(0, 3), border_radius=12)
+        pygame.draw.rect(surface, fill, rect, border_radius=12)
+        pygame.draw.rect(
+            surface,
+            accent if selected or hovered else SOFT_GRID,
+            rect,
+            2,
+            border_radius=12,
+        )
+        option_font = pygame.font.SysFont("Segoe UI", 16, bold=True)
+        text = option_font.render(option, True, text_color)
+        surface.blit(text, text.get_rect(midleft=(rect.x + 18, rect.centery)))
+        if selected:
+            check = pygame.font.SysFont("Segoe UI", 15, bold=True).render(
+                "Selected",
+                True,
+                text_color,
+            )
+            surface.blit(check, check.get_rect(midright=(rect.right - 14, rect.centery)))
+        choice_rects[option] = rect
+
+    close_rect = pygame.Rect(popup.right - 46, popup.y + 15, 32, 32)
+    pygame.draw.circle(
+        surface,
+        (255, 255, 255, 30),
+        close_rect.center,
+        16,
+    )
+    close_font = pygame.font.SysFont("Segoe UI", 18, bold=True)
+    close_text = close_font.render("X", True, PAPER)
+    surface.blit(close_text, close_text.get_rect(center=close_rect.center))
+    return choice_rects, close_rect
 
 
 def _draw_die(surface, value, rect):

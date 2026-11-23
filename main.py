@@ -14,6 +14,8 @@ from ludoverse_board import (
     draw_board,
     draw_control_panel,
     draw_dynamic_pieces,
+    draw_game_background,
+    draw_selection_popup,
     get_clicked_piece,
 )
 from rules import apply_move, get_legal_moves, get_winner, is_terminal
@@ -208,11 +210,14 @@ def main():
         "status": "Ready",
         "auto_play": True,
         "paused": False,
+        "popup": None,
     }
     _sync_agent_labels(ui_state)
 
     last_step_time = pygame.time.get_ticks()
     button_rects = {}
+    popup_rects = {}
+    popup_close_rect = None
     running = True
     while running:
         now = pygame.time.get_ticks()
@@ -221,7 +226,10 @@ def main():
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    running = False
+                    if ui_state["popup"] is not None:
+                        ui_state["popup"] = None
+                    else:
+                        running = False
                 elif (
                     event.key == pygame.K_p
                     and ui_state["mode"] == "AI vs AI"
@@ -248,30 +256,45 @@ def main():
                     last_step_time = pygame.time.get_ticks()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 position = event.pos
-                if button_rects.get("mode") and button_rects["mode"].collidepoint(position):
-                    mode = MODES[(MODES.index(mode) + 1) % len(MODES)]
-                    agents = create_agents(mode, difficulty)
-                    state = GameState(num_players=2)
-                    ui_state["mode"] = mode
-                    ui_state["paused"] = False
-                    ui_state["status"] = "Mode changed to {}.".format(mode)
-                    _clear_telemetry(ui_state)
-                    _sync_agent_labels(ui_state)
-                    last_step_time = pygame.time.get_ticks()
+                if ui_state["popup"] is not None:
+                    if popup_close_rect and popup_close_rect.collidepoint(position):
+                        ui_state["popup"] = None
+                    else:
+                        selected = next(
+                            (
+                                option
+                                for option, rect in popup_rects.items()
+                                if rect.collidepoint(position)
+                            ),
+                            None,
+                        )
+                        if selected is not None:
+                            if ui_state["popup"] == "mode":
+                                mode = selected
+                                agents = create_agents(mode, difficulty)
+                                state = GameState(num_players=2)
+                                ui_state["mode"] = mode
+                                ui_state["paused"] = False
+                                ui_state["status"] = "Mode changed to {}.".format(mode)
+                                _clear_telemetry(ui_state)
+                                _sync_agent_labels(ui_state)
+                                last_step_time = pygame.time.get_ticks()
+                            else:
+                                difficulty = selected
+                                agents = create_agents(mode, difficulty)
+                                ui_state["difficulty"] = difficulty
+                                ui_state["status"] = "Difficulty set to {}.".format(
+                                    difficulty
+                                )
+                                _clear_telemetry(ui_state)
+                            ui_state["popup"] = None
+                elif button_rects.get("mode") and button_rects["mode"].collidepoint(position):
+                    ui_state["popup"] = "mode"
                 elif (
                     button_rects.get("difficulty")
                     and button_rects["difficulty"].collidepoint(position)
                 ):
-                    difficulty = DIFFICULTIES[
-                        (DIFFICULTIES.index(difficulty) + 1)
-                        % len(DIFFICULTIES)
-                    ]
-                    agents = create_agents(mode, difficulty)
-                    ui_state["difficulty"] = difficulty
-                    ui_state["status"] = "Difficulty set to {}.".format(
-                        difficulty
-                    )
-                    _clear_telemetry(ui_state)
+                    ui_state["popup"] = "difficulty"
                 elif (
                     button_rects.get("reset")
                     and button_rects["reset"].collidepoint(position)
@@ -334,15 +357,16 @@ def main():
                         last_step_time = pygame.time.get_ticks()
 
         now = pygame.time.get_ticks()
-        state, last_step_time = _advance_game(
-            state,
-            agents,
-            ui_state,
-            now,
-            last_step_time,
-        )
+        if ui_state["popup"] is None:
+            state, last_step_time = _advance_game(
+                state,
+                agents,
+                ui_state,
+                now,
+                last_step_time,
+            )
 
-        screen.fill(BG)
+        draw_game_background(screen)
         draw_board(screen)
         legal_moves = (
             get_legal_moves(state, state.current_turn, state.dice_value)
@@ -353,6 +377,12 @@ def main():
         button_rects = draw_control_panel(screen, state, ui_state)
         if is_terminal(state):
             _draw_terminal_banner(screen, get_winner(state))
+        if ui_state["popup"] is not None:
+            popup_rects, popup_close_rect = draw_selection_popup(
+                screen,
+                ui_state["popup"],
+                mode if ui_state["popup"] == "mode" else difficulty,
+            )
         pygame.display.flip()
         clock.tick(60)
 
