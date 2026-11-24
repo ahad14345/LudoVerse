@@ -650,6 +650,23 @@ def draw_control_panel(surface, game_state, ui_state):
         GOLD,
         (810, 91),
     )
+    sound_rect = pygame.Rect(PANEL_X + 206, 54, 46, 32)
+    sound_hovered = sound_rect.collidepoint(pygame.mouse.get_pos())
+    sound_on = ui_state.get("sound_enabled", True)
+    pygame.draw.rect(
+        surface,
+        GOLD if sound_hovered else (92, 105, 125),
+        sound_rect,
+        border_radius=16,
+    )
+    sound_text = "SND ON" if sound_on else "MUTE"
+    _draw_text(
+        surface,
+        sound_text,
+        pygame.font.SysFont("Segoe UI", 9, bold=True),
+        PANEL_DARK if sound_hovered else PAPER,
+        (sound_rect.x + 7, sound_rect.y + 11),
+    )
     exit_rect = pygame.Rect(PANEL_X + 258, 54, 32, 32)
     exit_hovered = exit_rect.collidepoint(pygame.mouse.get_pos())
     pygame.draw.rect(
@@ -950,6 +967,7 @@ def draw_control_panel(surface, game_state, ui_state):
         surface.blit(text, text.get_rect(center=rect.center))
         buttons[key] = rect
     buttons["exit"] = exit_rect
+    buttons["sound"] = sound_rect
 
     pygame.draw.rect(surface, SOFT_GRID, panel, 1, border_radius=14)
     return buttons

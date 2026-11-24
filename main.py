@@ -1,4 +1,6 @@
 import pygame
+import math
+from array import array
 
 from ai_agents import ExpectimaxAgent, MinimaxAgent
 from game_state import GameState
@@ -26,6 +28,76 @@ DIFFICULTIES = ["Easy", "Medium", "Hard"]
 DEFAULT_MODE = "AI vs AI"
 DEFAULT_DIFFICULTY = "Medium"
 STEP_DELAY_MS = 450
+
+
+class SoundManager:
+    def __init__(self):
+        self.enabled = True
+        self.effects = {}
+        if not pygame.mixer.get_init():
+            return
+
+        pygame.mixer.set_num_channels(8)
+        self.effects = {
+            "button": self._make_tone((520, 620), 0.07),
+            "dice": self._make_sequence(((480, 0.04), (560, 0.04), (640, 0.05))),
+            "move": self._make_tone((360, 500), 0.10),
+            "capture": self._make_tone((170, 95), 0.22),
+            "skip": self._make_tone((220, 180), 0.12),
+            "win": self._make_sequence(
+                ((440, 0.16), (554, 0.16), (659, 0.16), (880, 0.36))
+            ),
+        }
+
+    def _make_tone(self, frequencies, duration, volume=0.28):
+        sample_rate = 44100
+        frame_count = int(sample_rate * duration)
+        start_frequency, end_frequency = frequencies
+        samples = array("h")
+
+        for frame in range(frame_count):
+            progress = frame / max(1, frame_count - 1)
+            frequency = start_frequency + (end_frequency - start_frequency) * progress
+            envelope = min(1.0, frame / 800.0) * min(1.0, (frame_count - frame) / 1200.0)
+            phase = 2 * math.pi * frequency * frame / sample_rate
+            value = int(32767 * volume * envelope * math.sin(phase))
+            samples.append(value)
+            samples.append(value)
+
+        return pygame.mixer.Sound(buffer=samples.tobytes())
+
+    def _make_sequence(self, notes, volume=0.28):
+        sample_rate = 44100
+        samples = array("h")
+
+        for frequency, duration in notes:
+            frame_count = int(sample_rate * duration)
+            for frame in range(frame_count):
+                progress = frame / max(1, frame_count - 1)
+                envelope = min(1.0, frame / 600.0) * min(1.0, (frame_count - frame) / 900.0)
+                phase = 2 * math.pi * frequency * frame / sample_rate
+                value = int(32767 * volume * envelope * math.sin(phase))
+                samples.append(value)
+                samples.append(value)
+
+        return pygame.mixer.Sound(buffer=samples.tobytes())
+
+    def play(self, name):
+        if self.enabled:
+            effect = self.effects.get(name)
+            if effect is not None:
+                effect.play()
+
+    def toggle(self):
+        self.enabled = not self.enabled
+        if not self.enabled:
+            pygame.mixer.stop()
+        return self.enabled
+
+
+_sounds = SoundManager.__new__(SoundManager)
+_sounds.enabled = True
+_sounds.effects = {}
 
 
 def create_agents(mode, difficulty):
@@ -75,6 +147,7 @@ def _clear_telemetry(ui_state):
 def _roll_dice(state, ui_state):
     player = state.current_turn
     dice_value = state.roll_dice()
+    _sounds.play("dice")
     legal_moves = get_legal_moves(state, player, dice_value)
     if legal_moves:
         ui_state["status"] = "{} rolled {}!".format(
@@ -110,11 +183,13 @@ def _apply_selected_move(state, player, piece_id, dice_value, ui_state):
     ]
 
     if captured_players:
+        _sounds.play("capture")
         ui_state["status"] = "{} captured {}!".format(
             player.title(),
             ", ".join(opponent.title() for opponent in captured_players),
         )
     else:
+        _sounds.play("move")
         ui_state["status"] = "{} moved piece {}.".format(
             player.title(),
             piece_id + 1,
@@ -143,6 +218,7 @@ def _advance_game(state, agents, ui_state, now, last_step_time):
     dice_value = state.dice_value
     legal_moves = get_legal_moves(state, player, dice_value)
     if not legal_moves:
+        _sounds.play("skip")
         ui_state["status"] = (
             "{} rolled {} - No legal moves (Skip)".format(
                 player.title(),
@@ -219,7 +295,10 @@ def _draw_terminal_banner(surface, winner):
 
 
 def main():
+    pygame.mixer.pre_init(44100, -16, 2, 512)
     pygame.init()
+    global _sounds
+    _sounds = SoundManager()
     pygame.display.set_caption("LudoVerse")
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     clock = pygame.time.Clock()
@@ -239,11 +318,13 @@ def main():
         "status": "Ready",
         "auto_play": True,
         "paused": False,
+        "sound_enabled": True,
         "popup": None,
     }
     _sync_agent_labels(ui_state)
 
     last_step_time = pygame.time.get_ticks()
+    win_played = False
     button_rects = {}
     popup_rects = {}
     popup_close_rect = None
@@ -259,6 +340,15 @@ def main():
                         ui_state["popup"] = None
                     else:
                         running = False
+                elif event.key == pygame.K_m:
+                    ui_state["sound_enabled"] = _sounds.toggle()
+                    ui_state["status"] = (
+                        "Sound enabled"
+                        if ui_state["sound_enabled"]
+                        else "Sound muted"
+                    )
+                    if ui_state["sound_enabled"]:
+                        _sounds.play("button")
                 elif ui_state["popup"] is not None:
                     options = (
                         MODES
@@ -286,6 +376,8 @@ def main():
                                     ui_state,
                                 )
                             ui_state["popup"] = None
+                            win_played = False
+                            _sounds.play("button")
                             last_step_time = pygame.time.get_ticks()
                             break
                 elif (
@@ -337,6 +429,8 @@ def main():
                                     ui_state,
                                 )
                                 last_step_time = pygame.time.get_ticks()
+                                win_played = False
+                                _sounds.play("button")
                             else:
                                 difficulty = selected
                                 state, agents = _apply_difficulty_selection(
@@ -347,16 +441,29 @@ def main():
                                     ui_state,
                                 )
                                 last_step_time = pygame.time.get_ticks()
+                                win_played = False
+                                _sounds.play("button")
                             ui_state["popup"] = None
                         elif not pygame.Rect(350, 250, 420, 300).collidepoint(position):
                             ui_state["popup"] = None
+                elif button_rects.get("sound") and button_rects["sound"].collidepoint(position):
+                    ui_state["sound_enabled"] = _sounds.toggle()
+                    ui_state["status"] = (
+                        "Sound enabled"
+                        if ui_state["sound_enabled"]
+                        else "Sound muted"
+                    )
+                    if ui_state["sound_enabled"]:
+                        _sounds.play("button")
                 elif button_rects.get("mode") and button_rects["mode"].collidepoint(position):
                     ui_state["popup"] = "mode"
+                    _sounds.play("button")
                 elif (
                     button_rects.get("difficulty")
                     and button_rects["difficulty"].collidepoint(position)
                 ):
                     ui_state["popup"] = "difficulty"
+                    _sounds.play("button")
                 elif (
                     button_rects.get("reset")
                     and button_rects["reset"].collidepoint(position)
@@ -364,6 +471,8 @@ def main():
                     state = GameState(num_players=2)
                     ui_state["paused"] = False
                     ui_state["status"] = "Game reset."
+                    win_played = False
+                    _sounds.play("button")
                     _clear_telemetry(ui_state)
                     last_step_time = pygame.time.get_ticks()
                 elif (
@@ -390,6 +499,7 @@ def main():
                     and not is_terminal(state)
                 ):
                     ui_state["paused"] = not ui_state.get("paused", False)
+                    _sounds.play("button")
                     ui_state["status"] = (
                         "Game Paused - Press P or Resume to continue"
                         if ui_state["paused"]
@@ -432,6 +542,10 @@ def main():
                 now,
                 last_step_time,
             )
+        winner = get_winner(state)
+        if winner is not None and not win_played:
+            _sounds.play("win")
+            win_played = True
 
         draw_game_background(screen)
         draw_board(screen)
