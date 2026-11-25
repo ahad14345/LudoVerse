@@ -373,6 +373,61 @@ def _piece_center(player, piece):
     return cell_rect(row, col).center
 
 
+def _active_piece_layout(game_state):
+    pieces_by_cell = {}
+    for player in game_state.players:
+        for piece in game_state.pieces[player]:
+            if piece.state == "ACTIVE":
+                pieces_by_cell.setdefault(piece.get_board_coords(), []).append(
+                    (player, piece)
+                )
+
+    positions = {}
+    for coords, pieces in pieces_by_cell.items():
+        count = len(pieces)
+        if count == 1:
+            offsets = ((0, 0),)
+            radius = int(CELL * 0.40)
+        elif count == 2:
+            offsets = ((-0.24, 0), (0.24, 0))
+            radius = max(1, int(CELL * 0.19))
+        elif count == 3:
+            offsets = ((0, -0.24), (-0.24, 0.20), (0.24, 0.20))
+            radius = max(1, int(CELL * 0.17))
+        elif count == 4:
+            offsets = (
+                (-0.24, -0.24),
+                (0.24, -0.24),
+                (-0.24, 0.24),
+                (0.24, 0.24),
+            )
+            radius = max(1, int(CELL * 0.17))
+        else:
+            columns = 3 if count <= 9 else 4
+            rows = math.ceil(count / columns)
+            spacing_x = 0.27 if columns == 3 else 0.24
+            spacing_y = min(0.27, 0.72 / max(1, rows - 1))
+            offsets = tuple(
+                (
+                    (column - (min(count, columns) - 1) / 2) * spacing_x,
+                    (row - (rows - 1) / 2) * spacing_y,
+                )
+                for row in range(rows)
+                for column in range(columns)
+            )[:count]
+            radius = max(1, int(CELL * (0.13 if count <= 9 else 0.10)))
+
+        center_x, center_y = cell_rect(*coords).center
+        for (player, piece), (offset_x, offset_y) in zip(pieces, offsets):
+            center = (
+                int(center_x + offset_x * CELL),
+                int(center_y + offset_y * CELL),
+            )
+            positions[(player, piece.piece_id)] = (center, radius)
+
+    return positions
+
+
 def _draw_piece_at(surface, center, color, dark, radius, piece_id=None):
     cx, cy = center
     pygame.draw.circle(surface, PANEL_DARK, (cx + 3, cy + 5), radius + 3)
@@ -424,19 +479,20 @@ def _draw_legal_highlight(surface, center):
 
 
 def draw_dynamic_pieces(surface, game_state, legal_moves=None):
+    active_positions = _active_piece_layout(game_state)
     for player in game_state.players:
         color = PLAYER_COLORS[player]
         dark = PLAYER_DARK_COLORS[player]
         for piece in game_state.pieces[player]:
             center = _piece_center(player, piece)
             if piece.state == "ACTIVE":
-                row, col = piece.get_board_coords()
-                draw_piece(
+                center, radius = active_positions[(player, piece.piece_id)]
+                _draw_piece_at(
                     surface,
-                    row,
-                    col,
+                    center,
                     color,
                     dark,
+                    radius,
                     piece_id=piece.piece_id,
                 )
             else:
@@ -464,13 +520,24 @@ def get_clicked_piece(mouse_pos, game_state, legal_moves):
 
     player = game_state.current_turn
     mouse_x, mouse_y = mouse_pos
+    active_positions = _active_piece_layout(game_state)
+    matches = []
     for piece in game_state.pieces[player]:
         if piece.piece_id not in legal_moves:
             continue
-        center_x, center_y = _piece_center(player, piece)
-        if (mouse_x - center_x) ** 2 + (mouse_y - center_y) ** 2 <= 24 ** 2:
-            return piece.piece_id
-    return None
+        if piece.state == "ACTIVE":
+            center, radius = active_positions[(player, piece.piece_id)]
+            hit_radius = radius + 3 if radius < int(CELL * 0.40) else 24
+        else:
+            center = _piece_center(player, piece)
+            hit_radius = 24
+        distance_squared = (
+            (mouse_x - center[0]) ** 2 + (mouse_y - center[1]) ** 2
+        )
+        if distance_squared <= hit_radius ** 2:
+            matches.append((distance_squared, piece.piece_id))
+
+    return min(matches)[1] if matches else None
 
 
 def _ui_value(ui_state, *keys, default=None):
@@ -504,7 +571,7 @@ def _draw_wrapped_text(surface, text, font, color, x, y, max_width, line_height)
         y += line_height
 
 
-def draw_selection_popup(surface, popup_type, current_value):
+def draw_selection_popup(surface, popup_type, current_value, mouse_pos=None):
     overlay = pygame.Surface(
         (surface.get_width(), surface.get_height()),
         pygame.SRCALPHA,
@@ -538,7 +605,8 @@ def draw_selection_popup(surface, popup_type, current_value):
     surface.blit(title_text, title_text.get_rect(center=(popup.centerx, popup.y + 36)))
 
     choice_rects = {}
-    mouse_pos = pygame.mouse.get_pos()
+    if mouse_pos is None:
+        mouse_pos = pygame.mouse.get_pos()
     for index, option in enumerate(options):
         rect = pygame.Rect(popup.x + 34, popup.y + 92 + index * 58, 352, 46)
         selected = option == current_value
@@ -569,7 +637,7 @@ def draw_selection_popup(surface, popup_type, current_value):
         choice_rects[option] = rect
 
     close_rect = pygame.Rect(popup.right - 46, popup.y + 15, 32, 32)
-    close_hovered = close_rect.collidepoint(pygame.mouse.get_pos())
+    close_hovered = close_rect.collidepoint(mouse_pos)
     close_fill = RED if close_hovered else (92, 105, 125)
     pygame.draw.rect(surface, close_fill, close_rect, border_radius=16)
     pygame.draw.line(
@@ -631,7 +699,7 @@ def _draw_die(surface, value, rect):
         pygame.draw.circle(surface, PIP_RED, pip, 6)
 
 
-def draw_control_panel(surface, game_state, ui_state):
+def draw_control_panel(surface, game_state, ui_state, mouse_pos=None):
     panel = pygame.Rect(PANEL_X, 40, 300, 720)
     pygame.draw.rect(surface, PAPER, panel, border_radius=14)
     header = pygame.Rect(PANEL_X, 40, 300, 96)
@@ -651,7 +719,9 @@ def draw_control_panel(surface, game_state, ui_state):
         (810, 91),
     )
     sound_rect = pygame.Rect(PANEL_X + 206, 54, 46, 32)
-    sound_hovered = sound_rect.collidepoint(pygame.mouse.get_pos())
+    if mouse_pos is None:
+        mouse_pos = pygame.mouse.get_pos()
+    sound_hovered = sound_rect.collidepoint(mouse_pos)
     sound_on = ui_state.get("sound_enabled", True)
     pygame.draw.rect(
         surface,
@@ -668,7 +738,7 @@ def draw_control_panel(surface, game_state, ui_state):
         (sound_rect.x + 7, sound_rect.y + 11),
     )
     exit_rect = pygame.Rect(PANEL_X + 258, 54, 32, 32)
-    exit_hovered = exit_rect.collidepoint(pygame.mouse.get_pos())
+    exit_hovered = exit_rect.collidepoint(mouse_pos)
     pygame.draw.rect(
         surface,
         RED if exit_hovered else (92, 105, 125),
@@ -939,7 +1009,6 @@ def draw_control_panel(surface, game_state, ui_state):
     )
     buttons = {}
     button_font = pygame.font.SysFont("Segoe UI", 13, bold=True)
-    mouse_pos = pygame.mouse.get_pos()
     for index, (
         key,
         label,

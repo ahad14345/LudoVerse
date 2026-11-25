@@ -286,12 +286,50 @@ def _draw_terminal_banner(surface, winner):
     prompt_font = pygame.font.SysFont("Segoe UI", 17)
     title = title_font.render("{} Wins!".format(winner.title()), True, GRID)
     prompt = prompt_font.render(
-        "Click Reset Game to play again",
+        "Ready for another game?",
         True,
         GRID,
     )
     surface.blit(title, title.get_rect(center=(banner.centerx, banner.y + 62)))
-    surface.blit(prompt, prompt.get_rect(center=(banner.centerx, banner.y + 118)))
+    surface.blit(prompt, prompt.get_rect(center=(banner.centerx, banner.y + 104)))
+    reset_rect = pygame.Rect(banner.centerx - 90, banner.bottom - 42, 180, 34)
+    pygame.draw.rect(surface, PLAYER_COLORS[winner], reset_rect, border_radius=17)
+    pygame.draw.rect(surface, GRID, reset_rect, 1, border_radius=17)
+    reset_font = pygame.font.SysFont("Segoe UI", 15, bold=True)
+    reset_text = reset_font.render("Play Again", True, PAPER)
+    surface.blit(reset_text, reset_text.get_rect(center=reset_rect.center))
+    return reset_rect
+
+
+def _logical_viewport(window_size):
+    scale = min(
+        window_size[0] / WINDOW_WIDTH,
+        window_size[1] / WINDOW_HEIGHT,
+    )
+    width = max(1, int(WINDOW_WIDTH * scale))
+    height = max(1, int(WINDOW_HEIGHT * scale))
+    return (
+        scale,
+        (window_size[0] - width) // 2,
+        (window_size[1] - height) // 2,
+        (width, height),
+    )
+
+
+def _to_logical_position(position, window_size):
+    scale, offset_x, offset_y, _ = _logical_viewport(window_size)
+    return (
+        int((position[0] - offset_x) / scale),
+        int((position[1] - offset_y) / scale),
+    )
+
+
+def _reset_game(ui_state):
+    ui_state["paused"] = False
+    ui_state["status"] = "Game reset."
+    _clear_telemetry(ui_state)
+    _sounds.play("button")
+    return GameState(num_players=2)
 
 
 def main():
@@ -299,8 +337,12 @@ def main():
     pygame.init()
     global _sounds
     _sounds = SoundManager()
-    pygame.display.set_caption("LudoVerse")
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    pygame.display.set_caption("LudoVerse | F11: Fullscreen")
+    screen = pygame.display.set_mode(
+        (WINDOW_WIDTH, WINDOW_HEIGHT),
+        pygame.RESIZABLE,
+    )
+    canvas = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
     clock = pygame.time.Clock()
 
     mode = DEFAULT_MODE
@@ -328,6 +370,9 @@ def main():
     button_rects = {}
     popup_rects = {}
     popup_close_rect = None
+    terminal_reset_rect = None
+    fullscreen = False
+    windowed_size = (WINDOW_WIDTH, WINDOW_HEIGHT)
     running = True
     while running:
         now = pygame.time.get_ticks()
@@ -349,6 +394,20 @@ def main():
                     )
                     if ui_state["sound_enabled"]:
                         _sounds.play("button")
+                elif event.key == pygame.K_F11:
+                    if fullscreen:
+                        screen = pygame.display.set_mode(
+                            windowed_size,
+                            pygame.RESIZABLE,
+                        )
+                        fullscreen = False
+                    else:
+                        windowed_size = screen.get_size()
+                        screen = pygame.display.set_mode(
+                            (0, 0),
+                            pygame.FULLSCREEN,
+                        )
+                        fullscreen = True
                 elif ui_state["popup"] is not None:
                     options = (
                         MODES
@@ -405,7 +464,7 @@ def main():
                     _roll_dice(state, ui_state)
                     last_step_time = pygame.time.get_ticks()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                position = event.pos
+                position = _to_logical_position(event.pos, screen.get_size())
                 if ui_state["popup"] is not None:
                     if popup_close_rect and popup_close_rect.collidepoint(position):
                         ui_state["popup"] = None
@@ -446,6 +505,14 @@ def main():
                             ui_state["popup"] = None
                         elif not pygame.Rect(350, 250, 420, 300).collidepoint(position):
                             ui_state["popup"] = None
+                elif (
+                    is_terminal(state)
+                    and terminal_reset_rect
+                    and terminal_reset_rect.collidepoint(position)
+                ):
+                    state = _reset_game(ui_state)
+                    win_played = False
+                    last_step_time = pygame.time.get_ticks()
                 elif button_rects.get("sound") and button_rects["sound"].collidepoint(position):
                     ui_state["sound_enabled"] = _sounds.toggle()
                     ui_state["status"] = (
@@ -468,12 +535,8 @@ def main():
                     button_rects.get("reset")
                     and button_rects["reset"].collidepoint(position)
                 ):
-                    state = GameState(num_players=2)
-                    ui_state["paused"] = False
-                    ui_state["status"] = "Game reset."
+                    state = _reset_game(ui_state)
                     win_played = False
-                    _sounds.play("button")
-                    _clear_telemetry(ui_state)
                     last_step_time = pygame.time.get_ticks()
                 elif (
                     button_rects.get("exit")
@@ -547,23 +610,39 @@ def main():
             _sounds.play("win")
             win_played = True
 
-        draw_game_background(screen)
-        draw_board(screen)
+        mouse_position = _to_logical_position(
+            pygame.mouse.get_pos(),
+            screen.get_size(),
+        )
+        draw_game_background(canvas)
+        draw_board(canvas)
         legal_moves = (
             get_legal_moves(state, state.current_turn, state.dice_value)
             if state.dice_value is not None and not is_terminal(state)
             else []
         )
-        draw_dynamic_pieces(screen, state, legal_moves)
-        button_rects = draw_control_panel(screen, state, ui_state)
+        draw_dynamic_pieces(canvas, state, legal_moves)
+        button_rects = draw_control_panel(
+            canvas,
+            state,
+            ui_state,
+            mouse_pos=mouse_position,
+        )
         if is_terminal(state):
-            _draw_terminal_banner(screen, get_winner(state))
+            terminal_reset_rect = _draw_terminal_banner(canvas, get_winner(state))
+        else:
+            terminal_reset_rect = None
         if ui_state["popup"] is not None:
             popup_rects, popup_close_rect = draw_selection_popup(
-                screen,
+                canvas,
                 ui_state["popup"],
                 mode if ui_state["popup"] == "mode" else difficulty,
+                mouse_pos=mouse_position,
             )
+        screen.fill(BG)
+        _, offset_x, offset_y, viewport_size = _logical_viewport(screen.get_size())
+        scaled_canvas = pygame.transform.scale(canvas, viewport_size)
+        screen.blit(scaled_canvas, (offset_x, offset_y))
         pygame.display.flip()
         clock.tick(60)
 
